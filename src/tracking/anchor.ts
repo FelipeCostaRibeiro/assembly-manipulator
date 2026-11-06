@@ -79,22 +79,25 @@ export class RobustHandAnchor {
   private lastConfidence = 0;
   private lostFrames = 0;
 
-  compute(landmarks: Landmark[] | null): AnchorResult {
-    if (!landmarks || landmarks.length < 21) {
-      this.lostFrames += 1;
-      if (this.lostFrames >= RESET_AFTER_LOST_FRAMES) {
-        this.reset();
-        return { x: 0.5, y: 0.5, confidence: 0, used: 0 };
-      }
-      if (this.lastAnchor) {
-        return { x: this.lastAnchor.x, y: this.lastAnchor.y, confidence: 0, used: 0 };
-      }
-      return { x: 0.5, y: 0.5, confidence: 0, used: 0 };
+  private lastOrCenter(): AnchorResult {
+    if (this.lastAnchor) {
+      return { x: this.lastAnchor.x, y: this.lastAnchor.y, confidence: 0, used: 0 };
     }
+    return { x: 0.5, y: 0.5, confidence: 0, used: 0 };
+  }
+
+  private missed(): AnchorResult {
+    this.lostFrames += 1;
+    if (this.lostFrames >= RESET_AFTER_LOST_FRAMES) this.reset();
+    return this.lastOrCenter();
+  }
+
+  compute(landmarks: Landmark[] | null): AnchorResult {
+    if (!landmarks || landmarks.length < 21) return this.missed();
 
     this.lostFrames = 0;
     const n = landmarks.length;
-    if (!this.histories || this.histories.length !== n) {
+    if (this.histories?.length !== n) {
       this.histories = Array.from({ length: n }, () => new LandmarkHistory());
     }
 
@@ -119,12 +122,7 @@ export class RobustHandAnchor {
       used += 1;
     }
 
-    if (sumW <= 1e-6) {
-      if (this.lastAnchor) {
-        return { x: this.lastAnchor.x, y: this.lastAnchor.y, confidence: 0, used: 0 };
-      }
-      return { x: 0.5, y: 0.5, confidence: 0, used: 0 };
-    }
+    if (sumW <= 1e-6) return this.lastOrCenter();
 
     let ax = sumWx / sumW;
     let ay = sumWy / sumW;
