@@ -1,0 +1,33 @@
+# Dependencias
+node_modules/
+
+# Build
+dist/
+
+# Assets gerados (binarios pesados). Recriar com: npm run assets
+public/wasm/
+public/models/
+
+# Montagens convertidas (geradas por tools/cad2gltf)
+public/assemblies/
+
+# CAD de origem e ambientes Python
+cad/
+.venv/
+__pycache__/
+*.pyc
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor / SO
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+*.local
