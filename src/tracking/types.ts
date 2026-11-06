@@ -7,9 +7,12 @@ export interface Landmark {
 export type Handedness = 'Left' | 'Right' | 'Unknown';
 
 export interface TrackedHand {
+  id: number;
   handedness: Handedness;
   score: number;
   landmarks: Landmark[];
+  center: Landmark;
+  confidence: number;
 }
 
 export interface TrackedFrame {
