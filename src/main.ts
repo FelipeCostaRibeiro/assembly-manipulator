@@ -32,9 +32,10 @@ const status = document.querySelector<HTMLDivElement>('#status')!;
 const scene = new Scene(sceneCanvas);
 const overlay = new HandOverlay(overlayCanvas, video);
 
-const filters = new Map<string, Vec3Filter[]>();
-const pinchWas = new Map<string, boolean>();
-const prevFist = new Map<string, boolean>();
+const filters = new Map<number, Vec3Filter[]>();
+const pinchWas = new Map<number, boolean>();
+const prevFist = new Map<number, boolean>();
+let knownIds = new Set<number>();
 
 let mode: Mode = 'idle';
 let lastFistTime = -Infinity;
@@ -53,10 +54,10 @@ let explodeAnimStart = 0;
 let palmAngleDeg: number | null = null;
 
 function smoothHand(hand: TrackedHand, timestamp: number): TrackedHand {
-  let handFilters = filters.get(hand.handedness);
+  let handFilters = filters.get(hand.id);
   if (!handFilters) {
     handFilters = Array.from({ length: hand.landmarks.length }, () => new Vec3Filter());
-    filters.set(hand.handedness, handFilters);
+    filters.set(hand.id, handFilters);
   }
   return {
     ...hand,
@@ -129,7 +130,7 @@ function isPlausibleHand(hand: TrackedHand): boolean {
 }
 
 interface HandGesture {
-  key: string;
+  key: number;
   pinch: PinchState;
   pinching: boolean;
   fist: boolean;
@@ -257,18 +258,22 @@ const tracker = new HandTracker(video, {
     overlay.draw(hands);
 
     const plausible = hands.filter(isPlausibleHand);
-    const present = new Set(plausible.map((hand) => hand.handedness));
-    for (const key of ['Left', 'Right', 'Unknown'] as const) {
-      if (!present.has(key)) {
-        dwell.reset(`${key}:pinch`);
-        dwell.reset(`${key}:fist`);
-        dwell.reset(`${key}:palm`);
+    const present = new Set(plausible.map((hand) => hand.id));
+    for (const id of knownIds) {
+      if (!present.has(id)) {
+        dwell.reset(`${id}:pinch`);
+        dwell.reset(`${id}:fist`);
+        dwell.reset(`${id}:palm`);
+        filters.delete(id);
+        pinchWas.delete(id);
+        prevFist.delete(id);
       }
     }
+    knownIds = present;
 
     const timestamp = frame.timestamp;
     const gestures: HandGesture[] = plausible.map((hand) => {
-      const key = hand.handedness;
+      const key = hand.id;
       const was = pinchWas.get(key) ?? false;
       const pinch = computePinch(hand, was);
       pinchWas.set(key, pinch.pinching);
@@ -278,7 +283,7 @@ const tracker = new HandTracker(video, {
         pinching: dwell.engaged(`${key}:pinch`, pinch.pinching, timestamp, PINCH_DWELL_MS),
         fist: dwell.engaged(`${key}:fist`, isFist(hand), timestamp, FIST_DWELL_MS),
         openPalm: dwell.engaged(`${key}:palm`, isOpenPalm(hand), timestamp, PALM_DWELL_MS),
-        center: hand.landmarks[9],
+        center: hand.center,
       };
     });
 

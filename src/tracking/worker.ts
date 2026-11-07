@@ -4,6 +4,8 @@ import {
   type HandLandmarkerResult,
 } from '@mediapipe/tasks-vision';
 import type { TrackedFrame, TrackedHand } from './types';
+import { HandGate } from './handGate';
+import { RobustHandAnchor } from './anchor';
 
 // URL absoluta: o Vite dev intercepta `import()` de arquivos em /public.
 // Com origem explicita o import vira externo e e servido como estatico.
@@ -14,6 +16,8 @@ const MODEL_PATH = '/models/hand_landmarker.task';
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
 let landmarker: HandLandmarker | null = null;
+const gate = new HandGate();
+const anchors = new Map<number, RobustHandAnchor>();
 
 interface InitMessage {
   type: 'init';
@@ -31,11 +35,38 @@ function serialize(result: HandLandmarkerResult): TrackedHand[] {
   return result.landmarks.map((landmarks, index) => {
     const category = result.handedness[index]?.[0];
     return {
+      id: -1,
       handedness: (category?.categoryName as TrackedHand['handedness']) ?? 'Unknown',
       score: category?.score ?? 0,
       landmarks: landmarks.map((point) => ({ x: point.x, y: point.y, z: point.z })),
+      center: { x: 0, y: 0, z: 0 },
+      confidence: 0,
     };
   });
+}
+
+function track(result: HandLandmarkerResult): TrackedHand[] {
+  const gated = gate.filter(serialize(result));
+  const liveIds = new Set<number>();
+  const hands: TrackedHand[] = [];
+  for (const hand of gated) {
+    liveIds.add(hand.id);
+    let anchor = anchors.get(hand.id);
+    if (!anchor) {
+      anchor = new RobustHandAnchor();
+      anchors.set(hand.id, anchor);
+    }
+    const anchorResult = anchor.compute(hand.landmarks);
+    hands.push({
+      ...hand,
+      center: { x: anchorResult.x, y: anchorResult.y, z: 0 },
+      confidence: anchorResult.confidence,
+    });
+  }
+  for (const id of anchors.keys()) {
+    if (!liveIds.has(id)) anchors.delete(id);
+  }
+  return hands;
 }
 
 ctx.onmessage = async (event: MessageEvent<InMessage>) => {
@@ -64,7 +95,7 @@ ctx.onmessage = async (event: MessageEvent<InMessage>) => {
       const result = landmarker.detectForVideo(message.bitmap, message.timestamp);
       const frame: TrackedFrame = {
         timestamp: message.timestamp,
-        hands: serialize(result),
+        hands: track(result),
       };
       ctx.postMessage({ type: 'frame', frame });
     } catch (error) {
