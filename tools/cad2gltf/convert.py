@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import struct
 import sys
@@ -12,6 +13,14 @@ JSON_CHUNK = 0x4E4F534A
 
 STEP_SUFFIXES = {".step", ".stp", ".iges", ".igs"}
 GLTF_SUFFIXES = {".gltf", ".glb"}
+
+
+def safe_path(candidate: Path, base: Path) -> Path:
+    root = os.path.realpath(base)
+    resolved = os.path.realpath(candidate)
+    if os.path.commonpath([root, resolved]) != root:
+        raise ValueError(f"Caminho fora do diretorio permitido: {candidate}")
+    return Path(resolved)
 
 
 def read_glb_json(path: Path) -> dict:
@@ -169,11 +178,19 @@ def main() -> int:
     parser.add_argument("--tol-relative", action="store_true")
     args = parser.parse_args()
 
-    if not args.input.is_file():
-        print(f"Entrada nao encontrada: {args.input}", file=sys.stderr)
+    base = Path.cwd()
+    try:
+        input_path = safe_path(args.input, base)
+        output_path = safe_path(args.output, base) if args.output else None
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
         return 1
 
-    suffix = args.input.suffix.lower()
+    if not input_path.is_file():
+        print(f"Entrada nao encontrada: {input_path}", file=sys.stderr)
+        return 1
+
+    suffix = input_path.suffix.lower()
     if suffix not in STEP_SUFFIXES | GLTF_SUFFIXES:
         print(f"Extensao nao suportada: {suffix}", file=sys.stderr)
         return 1
@@ -183,10 +200,10 @@ def main() -> int:
     if suffix in STEP_SUFFIXES:
         import cascadio
 
-        output = args.output or args.input.with_suffix(".glb")
-        print(f"Convertendo {args.input.name} -> {output.name} ...")
+        output = output_path or input_path.with_suffix(".glb")
+        print(f"Convertendo {input_path.name} -> {output.name} ...")
         cascadio.step_to_glb(
-            str(args.input),
+            str(input_path),
             str(output),
             tol_linear=args.tol_linear,
             tol_angular=args.tol_angular,
@@ -196,13 +213,13 @@ def main() -> int:
         )
         gltf = read_glb_json(output)
         if suffix in {".step", ".stp"}:
-            name_map = load_step_names(args.input)
+            name_map = load_step_names(input_path)
         parts_path = output.with_suffix(".parts.json")
         print(f"GLB gerado: {output} ({output.stat().st_size / 1e6:.1f} MB)")
     else:
-        print(f"Lendo {args.input.name} (glTF ja convertido pelo CAD) ...")
-        gltf = read_gltf(args.input)
-        parts_path = args.input.with_suffix(".parts.json")
+        print(f"Lendo {input_path.name} (glTF ja convertido pelo CAD) ...")
+        gltf = read_gltf(input_path)
+        parts_path = input_path.with_suffix(".parts.json")
 
     parts = build_parts(gltf, name_map)
     parts_path.write_text(
