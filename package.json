@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "assets": "node scripts/fetch-assets.mjs"
+    "assets": "node scripts/fetch-assets.mjs",
+    "assembly": "node scripts/prepare.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.2.2",

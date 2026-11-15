@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadAssembly, type Part } from '../model/assembly';
 import { loadExplode, offsetsAt, type ExplodeConfig } from '../model/explode';
 
@@ -23,16 +24,23 @@ export class Scene {
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x10141c);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 2));
 
-    const key = new THREE.DirectionalLight(0xffffff, 2);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.5;
+    pmrem.dispose();
+
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.3));
+
+    const key = new THREE.DirectionalLight(0xffffff, 1.2);
     key.position.set(4, 7, 6);
     this.scene.add(key);
 
-    const fill = new THREE.DirectionalLight(0x88aaff, 0.8);
+    const fill = new THREE.DirectionalLight(0x88aaff, 0.3);
     fill.position.set(-5, 2, -4);
     this.scene.add(fill);
 

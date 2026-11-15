@@ -3,14 +3,41 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import struct
 import sys
 from pathlib import Path
 
-import cascadio
-
 JSON_CHUNK = 0x4E4F534A
+
+STEP_SUFFIXES = {".step", ".stp", ".iges", ".igs"}
+GLTF_SUFFIXES = {".gltf", ".glb"}
+
+
+def confine_path(candidate: Path, root: Path) -> Path:
+    root = Path(root).resolve()
+    target = Path(candidate)
+    if target.is_absolute():
+        try:
+            parts = target.resolve().relative_to(root).parts
+        except ValueError:
+            raise FileNotFoundError(f"Caminho fora do diretorio permitido: {candidate}")
+    else:
+        parts = target.parts
+
+    current = root
+    for part in parts:
+        match = None
+        with os.scandir(current) as entries:
+            for entry in entries:
+                if entry.name == part:
+                    match = entry
+                    break
+        if match is None:
+            raise FileNotFoundError(f"Caminho nao encontrado: {candidate}")
+        current = Path(match.path)
+    return current
 
 
 def read_glb_json(path: Path) -> dict:
@@ -30,6 +57,12 @@ def read_glb_json(path: Path) -> dict:
         offset += chunk_length + (4 - chunk_length % 4) % 4
 
     raise ValueError("Chunk JSON nao encontrado no GLB")
+
+
+def read_gltf(path: Path) -> dict:
+    if path.suffix.lower() == ".gltf":
+        return json.loads(path.read_text(encoding="utf-8"))
+    return read_glb_json(path)
 
 
 def slug(value: str) -> str:
@@ -155,41 +188,67 @@ def build_parts(gltf: dict, name_map: dict[str, str] | None = None) -> list[dict
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="Arquivo STEP/IGES de entrada")
-    parser.add_argument("-o", "--output", type=Path, help="Caminho do .glb de saida")
+    parser.add_argument("input", type=Path, help="Arquivo STEP/IGES ou glTF/GLB de entrada")
+    parser.add_argument("-o", "--output", type=Path, help="Caminho do .glb de saida (apenas STEP/IGES)")
     parser.add_argument("--tol-linear", type=float, default=0.1)
     parser.add_argument("--tol-angular", type=float, default=0.5)
     parser.add_argument("--tol-relative", action="store_true")
     args = parser.parse_args()
 
-    if not args.input.is_file():
-        print(f"Entrada nao encontrada: {args.input}", file=sys.stderr)
+    base = Path.cwd()
+    try:
+        input_path = confine_path(args.input, base)
+        output_path = None
+        if args.output:
+            out_name = args.output.name
+            if Path(out_name).name != out_name or out_name in {"", ".", ".."}:
+                raise ValueError(f"Nome de saida invalido: {args.output}")
+            output_path = confine_path(args.output.parent, base) / out_name
+    except (FileNotFoundError, ValueError) as error:
+        print(str(error), file=sys.stderr)
         return 1
 
-    output = args.output or args.input.with_suffix(".glb")
+    if not input_path.is_file():
+        print(f"Entrada nao encontrada: {input_path}", file=sys.stderr)
+        return 1
 
-    print(f"Convertendo {args.input.name} -> {output.name} ...")
-    cascadio.step_to_glb(
-        str(args.input),
-        str(output),
-        tol_linear=args.tol_linear,
-        tol_angular=args.tol_angular,
-        tol_relative=args.tol_relative,
-        merge_primitives=True,
-        include_materials=True,
-    )
+    suffix = input_path.suffix.lower()
+    if suffix not in STEP_SUFFIXES | GLTF_SUFFIXES:
+        print(f"Extensao nao suportada: {suffix}", file=sys.stderr)
+        return 1
 
-    gltf = read_glb_json(output)
-    name_map = load_step_names(args.input) if args.input.suffix.lower() in {".step", ".stp"} else {}
+    name_map: dict[str, str] = {}
+
+    if suffix in STEP_SUFFIXES:
+        import cascadio
+
+        output = output_path or input_path.with_suffix(".glb")
+        print(f"Convertendo {input_path.name} -> {output.name} ...")
+        cascadio.step_to_glb(
+            str(input_path),
+            str(output),
+            tol_linear=args.tol_linear,
+            tol_angular=args.tol_angular,
+            tol_relative=args.tol_relative,
+            merge_primitives=True,
+            include_materials=True,
+        )
+        gltf = read_glb_json(output)
+        if suffix in {".step", ".stp"}:
+            name_map = load_step_names(input_path)
+        parts_path = output.with_suffix(".parts.json")
+        print(f"GLB gerado: {output} ({output.stat().st_size / 1e6:.1f} MB)")
+    else:
+        print(f"Lendo {input_path.name} (glTF ja convertido pelo CAD) ...")
+        gltf = read_gltf(input_path)
+        parts_path = input_path.with_suffix(".parts.json")
+
     parts = build_parts(gltf, name_map)
-
-    parts_path = output.with_suffix(".parts.json")
     parts_path.write_text(
         json.dumps({"parts": parts}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
-    print(f"GLB gerado: {output} ({output.stat().st_size / 1e6:.1f} MB)")
     print(f"{len(parts)} pecas -> {parts_path.name}")
     for part in parts:
         print(f"  - {part['partId']:<24} explodeDir={part['explodeDir']}")

@@ -51,6 +51,7 @@ controle de versão) — rode uma vez após clonar.
 | `npm run preview` | serve o build de produção |
 | `npm run typecheck` | checagem de tipos |
 | `npm run assets` | copia wasm e baixa modelo do MediaPipe |
+| `npm run assembly <nome>` | copia a montagem de `cad/` e gera o `parts.json` em `public/assemblies/` |
 
 Ao abrir o app, permita o acesso à câmera. Posicione a mão a ~40–60cm da webcam.
 
@@ -107,9 +108,11 @@ src/
   tracking/     mediapipe em Web Worker + suavização (One-Euro)
   gesture/      gesto → intenção
   model/        árvore de peças + vista explodida
-  render/       Three.js, carregamento do glb, raycast
+  render/       Three.js, carregamento do glTF, câmera e vista explodida
   ui/           overlay e feedback (HUD)
-tools/cad2gltf/ conversor STEP/IGES → glTF (Python, build-time)
+cad/            fonte CAD por montagem (export do SolidWorks) — entrada do pipeline
+public/assemblies/ modelo + metadados que o app carrega (gerados por `npm run assembly`)
+tools/cad2gltf/ conversor/gerador de metadados (Python, build-time)
 docs/           arquitetura, gestos, pipeline CAD e roadmap
 ```
 
@@ -117,30 +120,36 @@ docs/           arquitetura, gestos, pipeline CAD e roadmap
 
 ## Pipeline CAD
 
-STEP/IGES **não carregam no navegador**. A conversão para glTF acontece offline, uma
-única vez, com Python:
+A **fonte CAD** fica em `cad/<montagem>/` (export do SolidWorks: `.gltf`/`.glb`,
+`data.bin` e texturas). O que o app **carrega** fica em `public/assemblies/` e é
+**gerado** a partir da fonte:
 
 ```
-STEP/IGES ──► convert.py (cascadio / OCCT) ──► montagem.glb
-                                            └─ montagem.parts.json
+cad/<montagem>/  ──► npm run assembly <montagem>  ──► public/assemblies/
+  (export do CAD)        copia + convert.py              modelo + parts.json
 ```
 
 ```bash
-pip install -r tools/cad2gltf/requirements.txt
-python tools/cad2gltf/convert.py caminho/para/peca.step -o public/assemblies/minha-peca.glb
+# 1. exporte do SolidWorks para cad/Montagem_CyberPhone/
+# 2. prepare o runtime:
+npm run assembly Montagem_CyberPhone
 ```
 
-O script preserva nomes e cores por peça e gera um `parts.json` com metadados —
-inclusive `explodeDir`, a direção de cada peça na vista explodida. Detalhes e
-motivações em [docs/pipeline-cad.md](docs/pipeline-cad.md).
+Separar a fonte (`cad/`) da saída (`public/assemblies/`) mantém a pasta de runtime
+100% regenerável. O conversor ainda aceita STEP/IGES
+(`tools/cad2gltf/convert.py`), mas o caminho normal é exportar glTF direto do CAD.
+Ele preserva nomes e materiais por peça e gera o `parts.json` com metadados —
+inclusive `explodeDir`, a direção de cada peça na vista explodida. Detalhes em
+[docs/pipeline-cad.md](docs/pipeline-cad.md).
 
 ---
 
 ## Documentação
 
-- [Arquitetura](docs/arquiteture.md) — stack, camadas, contratos e fronteira runtime/build-time
-- [Gestos](docs/gestos.md) — vocabulário de gestos e regra de mãos
-- [Pipeline CAD](docs/pipeline-cad.md) — conversão STEP/IGES → glTF
+- [Arquitetura](docs/architecture.md) — stack, camadas, contratos e fronteira runtime/build-time
+- [Gestos](docs/gestures.md) — vocabulário de gestos e detecção
+- [Pipeline CAD](docs/pipeline-cad.md) — do export do CAD ao glTF + parts.json
+- [Roadmap](docs/roadmap.md) — fases de implementação
 
 ---
 
