@@ -15,12 +15,29 @@ STEP_SUFFIXES = {".step", ".stp", ".iges", ".igs"}
 GLTF_SUFFIXES = {".gltf", ".glb"}
 
 
-def safe_path(candidate: Path, base: Path) -> Path:
-    root = os.path.realpath(base)
-    resolved = os.path.realpath(candidate)
-    if os.path.commonpath([root, resolved]) != root:
-        raise ValueError(f"Caminho fora do diretorio permitido: {candidate}")
-    return Path(resolved)
+def confine_path(candidate: Path, root: Path) -> Path:
+    root = Path(root).resolve()
+    target = Path(candidate)
+    if target.is_absolute():
+        try:
+            parts = target.resolve().relative_to(root).parts
+        except ValueError:
+            raise FileNotFoundError(f"Caminho fora do diretorio permitido: {candidate}")
+    else:
+        parts = target.parts
+
+    current = root
+    for part in parts:
+        match = None
+        with os.scandir(current) as entries:
+            for entry in entries:
+                if entry.name == part:
+                    match = entry
+                    break
+        if match is None:
+            raise FileNotFoundError(f"Caminho nao encontrado: {candidate}")
+        current = Path(match.path)
+    return current
 
 
 def read_glb_json(path: Path) -> dict:
@@ -180,9 +197,14 @@ def main() -> int:
 
     base = Path.cwd()
     try:
-        input_path = safe_path(args.input, base)
-        output_path = safe_path(args.output, base) if args.output else None
-    except ValueError as error:
+        input_path = confine_path(args.input, base)
+        output_path = None
+        if args.output:
+            out_name = args.output.name
+            if Path(out_name).name != out_name or out_name in {"", ".", ".."}:
+                raise ValueError(f"Nome de saida invalido: {args.output}")
+            output_path = confine_path(args.output.parent, base) / out_name
+    except (FileNotFoundError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 1
 
