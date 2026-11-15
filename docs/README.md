@@ -5,17 +5,17 @@ com movimentos das maos, com foco em **demonstracao**.
 
 ## Indice
 
-- [Arquitetura](arquitetura.md) — stack, camadas, contratos, estrutura de pastas
-- [Pipeline CAD](pipeline-cad.md) — conversao STEP/IGES -> glTF com metadados
-- [Gestos](gestos.md) — vocabulario de gestos e regra de maos
-- [Roadmap](roadmap.md) — fases de implementacao com criterios de aceite
+- [Arquitetura](architecture.md) — stack, camadas, contratos, estrutura de pastas
+- [Pipeline CAD](pipeline-cad.md) — do export do CAD ao glTF + parts.json
+- [Gestos](gestures.md) — vocabulario de gestos e deteccao
+- [Roadmap](roadmap.md) — fases de implementacao
 
 ## Decisoes ja tomadas
 
 | Pergunta | Decisao |
 |---|---|
 | Plataforma alvo | **Web** (Three.js + MediaPipe), deploy estatico |
-| Formato de entrada | **STEP/IGES** (CAD parametrico) |
+| Formato de entrada | **glTF/GLB** (export do CAD); STEP/IGES via conversor de fallback |
 | Hardware de captura | **Webcam RGB comum** (1 camera, sem profundidade) |
 | Modelos de CV | **Somente pre-treinados** (MediaPipe). Sem treinar modelo proprio |
 | Papel do Python | **Somente build-time** (conversao CAD e tooling). Fora do runtime |
