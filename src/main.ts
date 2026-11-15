@@ -6,9 +6,18 @@ import { Scene } from './render/scene';
 import { HandOverlay } from './ui/hud';
 import type { Landmark, TrackedHand } from './tracking/types';
 
-const GLB_URL = '/assemblies/Montagem_CyberPhone.glb';
-const PARTS_URL = '/assemblies/Montagem_CyberPhone.parts.json';
-const EXPLODE_URL = '/assemblies/Montagem_CyberPhone.explode.json';
+const ASSEMBLY_BASE = '/assemblies/Montagem_CyberPhone';
+const PARTS_URL = `${ASSEMBLY_BASE}.parts.json`;
+const EXPLODE_URL = `${ASSEMBLY_BASE}.explode.json`;
+
+async function resolveModelUrl(base: string): Promise<string> {
+  for (const ext of ['.gltf', '.glb']) {
+    const url = `${base}${ext}`;
+    const response = await fetch(url, { method: 'HEAD' });
+    if (response.ok) return url;
+  }
+  throw new Error('modelo .gltf/.glb nao encontrado');
+}
 
 const ROTATE_SENSITIVITY = 8.0;
 const FIST_RESET_WINDOW = 1000;
@@ -315,12 +324,13 @@ function animate(): void {
 window.addEventListener('resize', () => scene.resize());
 animate();
 
-scene
-  .load(GLB_URL, PARTS_URL, EXPLODE_URL)
+resolveModelUrl(ASSEMBLY_BASE)
+  .then((modelUrl) => scene.load(modelUrl, PARTS_URL, EXPLODE_URL))
   .then(() => {
     status.textContent = 'Montagem carregada. Palmas lado a lado (horizontal): afastar explode, juntar reconstroi.';
   })
   .catch((error) => {
+    console.error('[load]', error);
     status.textContent = `Falha ao carregar montagem: ${String(error)}`;
   });
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
 const PALETTE = [
   0x6ea8fe, 0xf4a261, 0x81c784, 0xe07a5f,
@@ -16,7 +17,7 @@ export interface PartMeta {
 
 export interface Part {
   meta: PartMeta;
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   origin: THREE.Vector3;
   explode: THREE.Vector3;
 }
@@ -31,23 +32,51 @@ function objectKey(object: THREE.Object3D): string {
   return (object.userData?.name as string) || object.name;
 }
 
+function fixColorSpace(root: THREE.Object3D): void {
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      const standard = material as THREE.MeshStandardMaterial;
+      standard.color?.convertSRGBToLinear();
+    }
+  });
+}
+
+function createLoader(): GLTFLoader {
+  const manager = new THREE.LoadingManager();
+
+  const skipDds: THREE.Loader = {
+    load: (_url: string, _onLoad: unknown, _onProgress: unknown, onError?: (e: Error) => void) => {
+      console.warn('Textura .dds ignorada (formato nao suportado pela web):', _url);
+      onError?.(new Error('dds nao suportado'));
+    },
+  } as unknown as THREE.Loader;
+  manager.addHandler(/\.dds$/i, skipDds);
+
+  const loader = new GLTFLoader(manager);
+  const draco = new DRACOLoader();
+  draco.setDecoderPath('/draco/');
+  loader.setDRACOLoader(draco);
+  return loader;
+}
+
 export async function loadAssembly(glbUrl: string, partsUrl: string): Promise<Assembly> {
   const response = await fetch(partsUrl);
   if (!response.ok) throw new Error(`parts.json: HTTP ${response.status}`);
   const { parts: metaList } = (await response.json()) as { parts: PartMeta[] };
 
-  const gltf = await new GLTFLoader().loadAsync(glbUrl);
+  const gltf = await createLoader().loadAsync(glbUrl);
   const root = gltf.scene;
+  fixColorSpace(root);
 
-  const meshesByKey = new Map<string, THREE.Mesh>();
+  const objectsByKey = new Map<string, THREE.Object3D>();
   const meshesInOrder: THREE.Mesh[] = [];
   root.traverse((object) => {
-    const mesh = object as THREE.Mesh;
-    if (mesh.isMesh) {
-      meshesInOrder.push(mesh);
-      const key = objectKey(object);
-      if (key) meshesByKey.set(key, mesh);
-    }
+    if ((object as THREE.Mesh).isMesh) meshesInOrder.push(object as THREE.Mesh);
+    const key = objectKey(object);
+    if (key && !objectsByKey.has(key)) objectsByKey.set(key, object);
   });
 
   const box = new THREE.Box3().setFromObject(root);
@@ -56,20 +85,23 @@ export async function loadAssembly(glbUrl: string, partsUrl: string): Promise<As
 
   const parts: Part[] = [];
   metaList.forEach((meta, index) => {
-    const mesh = meshesByKey.get(meta.node) ?? meshesInOrder[index];
-    if (!mesh) return;
+    const object = objectsByKey.get(meta.node) ?? meshesInOrder[index];
+    if (!object) return;
 
-    mesh.material = new THREE.MeshStandardMaterial({
-      color: PALETTE[index % PALETTE.length],
-      roughness: 0.5,
-      metalness: 0.25,
-    });
-    mesh.userData.partId = meta.partId;
+    const mesh = object as THREE.Mesh;
+    if (mesh.isMesh && !mesh.material) {
+      mesh.material = new THREE.MeshStandardMaterial({
+        color: PALETTE[index % PALETTE.length],
+        roughness: 0.5,
+        metalness: 0.25,
+      });
+    }
+    object.userData.partId = meta.partId;
 
     parts.push({
       meta,
-      mesh,
-      origin: mesh.position.clone(),
+      mesh: object,
+      origin: object.position.clone(),
       explode: new THREE.Vector3(...meta.explodeDir).multiplyScalar(explodeScale),
     });
   });

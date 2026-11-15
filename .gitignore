@@ -7,6 +7,7 @@ dist/
 # Assets gerados (binarios pesados). Recriar com: npm run assets
 public/wasm/
 public/models/
+public/draco/
 
 # Montagens convertidas (geradas por tools/cad2gltf)
 public/assemblies/

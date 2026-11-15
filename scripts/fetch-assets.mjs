@@ -17,6 +17,12 @@ await mkdir(wasmDest, { recursive: true });
 await cp(wasmSrc, wasmDest, { recursive: true });
 console.log(`wasm copiado para ${path.relative(root, wasmDest)}`);
 
+const dracoSrc = path.join(root, 'node_modules', 'three', 'examples', 'jsm', 'libs', 'draco');
+const dracoDest = path.join(root, 'public', 'draco');
+await mkdir(dracoDest, { recursive: true });
+await cp(dracoSrc, dracoDest, { recursive: true });
+console.log(`decoder draco copiado para ${path.relative(root, dracoDest)}`);
+
 try {
   await access(modelDest);
   console.log('modelo ja existe, download ignorado');
